@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DHS Child Care Certificate Parser</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: #f4f6fa;
+    min-height: 100vh;
+    color: #1a2a3a;
+  }
+
+  .header {
+    background: linear-gradient(135deg, #1a3a5c 0%, #2e6da4 100%);
+    padding: 2rem 2.5rem;
+    color: white;
+  }
+  .header h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.9rem;
+    margin-bottom: 0.3rem;
+  }
+  .header p { color: #b8d4f0; font-size: 0.95rem; }
+
+  .container { max-width: 900px; margin: 2rem auto; padding: 0 1.5rem; }
+
+  .card {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+    margin-bottom: 1.5rem;
+  }
+
+  .upload-zone {
+    border: 2px dashed #adc8e8;
+    border-radius: 10px;
+    padding: 3rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #f8fbff;
+  }
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: #2e6da4;
+    background: #eef5ff;
+  }
+  .upload-zone .icon { font-size: 3rem; margin-bottom: 0.75rem; }
+  .upload-zone p { color: #4a6a8a; font-size: 0.95rem; }
+  .upload-zone strong { color: #1a3a5c; }
+  #file-input { display: none; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border: none; border-radius: 8px;
+    font-family: inherit; font-size: 0.95rem; font-weight: 600;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .btn-primary { background: #2e6da4; color: white; }
+  .btn-primary:hover { background: #1a3a5c; }
+  .btn-primary:disabled { background: #9ab8d4; cursor: not-allowed; }
+  .btn-success { background: #1a7a4a; color: white; }
+  .btn-success:hover { background: #145c38; }
+  .btn-lg { padding: 1rem 2rem; font-size: 1.05rem; width: 100%; justify-content: center; }
+
+  .progress-wrap { margin-top: 1.5rem; display: none; }
+  .progress-bar-outer {
+    height: 8px; background: #dde8f5; border-radius: 99px; overflow: hidden; margin-bottom: 0.5rem;
+  }
+  .progress-bar-inner {
+    height: 100%; background: #2e6da4; border-radius: 99px;
+    width: 0%; transition: width 0.4s ease;
+  }
+  .progress-text { font-size: 0.85rem; color: #4a6a8a; }
+
+  .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+  .info-card {
+    background: #f0f6ff; border-left: 4px solid #2e6da4;
+    border-radius: 0 8px 8px 0; padding: 0.85rem 1rem;
+  }
+  .info-card h4 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: #4a6a8a; margin-bottom: 0.2rem; }
+  .info-card p  { font-size: 0.95rem; font-weight: 600; color: #1a3a5c; }
+
+  .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+  .metric {
+    background: #1a3a5c; color: white; border-radius: 10px;
+    padding: 1rem; text-align: center;
+  }
+  .metric-value { font-size: 1.8rem; font-weight: 700; }
+  .metric-label { font-size: 0.78rem; opacity: 0.75; margin-top: 0.2rem; }
+
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th {
+    background: #2e6da4; color: white; padding: 0.6rem 0.75rem;
+    text-align: left; font-weight: 600; white-space: nowrap;
+  }
+  td { padding: 0.55rem 0.75rem; border-bottom: 1px solid #e8eef5; }
+  tr:nth-child(even) td { background: #f0f6ff; }
+  tr:hover td { background: #ddeeff; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .editable { outline: none; }
+  .editable:focus { background: #fffde7 !important; }
+
+  .error-box {
+    background: #fff0f0; border: 1px solid #ffcccc;
+    border-radius: 8px; padding: 1rem 1.25rem;
+    color: #c00; font-size: 0.9rem; margin-top: 1rem;
+    display: none;
+  }
+
+  #results-section { display: none; }
+
+  .section-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.25rem; margin-bottom: 1rem; color: #1a3a5c;
+  }
+
+  .hint { font-size: 0.8rem; color: #7a9ab8; margin-top: 0.4rem; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🦉 DHS Child Care Certificate Parser</h1>
+  <p>Upload an Illinois DHS Child Care Certificate Report PDF — Claude reads it and generates a formatted Excel file.</p>
+</div>
+
+<div class="container">
+
+  <!-- Upload card -->
+  <div class="card">
+    <div class="upload-zone" id="upload-zone">
+      <div class="icon">📄</div>
+      <p><strong>Drop your file here</strong> or click to browse</p>
+      <p style="margin-top:0.4rem; font-size:0.82rem;">PDF, JPG, or PNG · IL444-3492A form · up to 50 MB</p>
+    </div>
+    <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png">
+
+    <div class="progress-wrap" id="progress-wrap">
+      <div class="progress-bar-outer"><div class="progress-bar-inner" id="progress-bar"></div></div>
+      <div class="progress-text" id="progress-text">Starting…</div>
+    </div>
+
+    <div class="error-box" id="error-box"></div>
+
+    <div style="margin-top:1.25rem;">
+      <button class="btn btn-primary btn-lg" id="parse-btn" disabled>
+        ✨ Parse Certificate
+      </button>
+      <p class="hint" style="text-align:center; margin-top:0.5rem;">
+        Claude reads each page using vision AI — typically 15–45 seconds depending on page count.
+      </p>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="results-section">
+
+    <div class="card">
+      <div class="section-title">Provider Information</div>
+      <div class="info-grid" id="info-grid"></div>
+      <div class="metrics" id="metrics"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title" id="children-title">Children</div>
+      <p class="hint" style="margin-bottom:0.75rem;">Click any cell to edit before downloading.</p>
+      <div class="table-wrap">
+        <table id="data-table">
+          <thead>
+            <tr>
+              <th>Parent/Client</th>
+              <th>Child's Name</th>
+              <th>Date of Birth</th>
+              <th>Rate ($)</th>
+              <th>Co-Pay ($)</th>
+              <th>Elig Days</th>
+              <th>Attd Days</th>
+              <th>Adj Days</th>
+              <th>Payment ($)</th>
+            </tr>
+          </thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:1.5rem;">
+        <button class="btn btn-success btn-lg" id="download-btn">
+          ⬇️ Download Excel
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let parsedData = null;
+
+const uploadZone = document.getElementById('upload-zone');
+const fileInput  = document.getElementById('file-input');
+const parseBtn   = document.getElementById('parse-btn');
+const progressWrap = document.getElementById('progress-wrap');
+const progressBar  = document.getElementById('progress-bar');
+const progressText = document.getElementById('progress-text');
+const errorBox   = document.getElementById('error-box');
+const resultsSection = document.getElementById('results-section');
+const downloadBtn = document.getElementById('download-btn');
+
+// Upload zone click
+uploadZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) {
+    uploadZone.querySelector('p').textContent = `📎 ${fileInput.files[0].name}`;
+    parseBtn.disabled = false;
+    errorBox.style.display = 'none';
+  }
+});
+
+// Drag and drop
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file && file.name.endsWith('.pdf')) {
+    fileInput.files = e.dataTransfer.files;
+    uploadZone.querySelector('p').textContent = `📎 ${file.name}`;
+    parseBtn.disabled = false;
+  }
+});
+
+// Parse
+parseBtn.addEventListener('click', async () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+
+  parseBtn.disabled = true;
+  errorBox.style.display = 'none';
+  resultsSection.style.display = 'none';
+  progressWrap.style.display = 'block';
+
+  // Animate progress bar (indeterminate feel)
+  let pct = 5;
+  progressBar.style.width = pct + '%';
+  progressText.textContent = 'Uploading PDF…';
+  const ticker = setInterval(() => {
+    if (pct < 88) {
+      pct += Math.random() * 3;
+      progressBar.style.width = Math.min(pct, 88) + '%';
+      if (pct < 20) progressText.textContent = 'Uploading PDF…';
+      else if (pct < 50) progressText.textContent = 'Claude is reading the pages…';
+      else if (pct < 75) progressText.textContent = 'Extracting child records…';
+      else progressText.textContent = 'Almost done…';
+    }
+  }, 800);
+
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    const resp = await fetch('/parse', { method: 'POST', body: form });
+    const data = await resp.json();
+
+    clearInterval(ticker);
+
+    if (!resp.ok || data.error) {
+      throw new Error(data.error || 'Unknown error');
+    }
+
+    progressBar.style.width = '100%';
+    progressText.textContent = `Done — ${data.count} children extracted.`;
+    parsedData = data;
+    renderResults(data);
+    resultsSection.style.display = 'block';
+
+  } catch (err) {
+    clearInterval(ticker);
+    progressWrap.style.display = 'none';
+    errorBox.textContent = '❌ ' + err.message;
+    errorBox.style.display = 'block';
+    parseBtn.disabled = false;
+  }
+});
+
+function fmt(val, dec=2) {
+  if (val == null || val === '') return '';
+  return parseFloat(val).toFixed(dec);
+}
+
+function calcPayment(rate, copay, elig, attd, adj) {
+  rate  = parseFloat(rate)  || 0;
+  copay = parseFloat(copay) || 0;
+  const days = (adj !== null && adj !== '' && adj !== undefined)
+    ? parseFloat(adj) : parseFloat(elig) || 0;
+  return (rate * days - copay).toFixed(2);
+}
+
+function renderResults(data) {
+  const pi = data.provider || {};
+  const children = data.children || [];
+  const summary  = data.summary  || {};
+
+  // Info cards
+  const infoGrid = document.getElementById('info-grid');
+  infoGrid.innerHTML = [
+    ['Provider',       pi.name || '—'],
+    ['Report Period',  pi.period || '—'],
+    ['DHS Provider ID', pi.dhs_id || '—'],
+    ['Date of Issue',  pi.date_of_issue || '—'],
+  ].map(([l,v]) => `<div class="info-card"><h4>${l}</h4><p>${v}</p></div>`).join('');
+
+  // Metrics
+  const totalElig  = children.reduce((s,c) => s + (parseInt(c.elig_days)||0), 0);
+  const totalAttd  = children.reduce((s,c) => s + (parseInt(c.attd_days)||0), 0);
+  const totalPay   = children.reduce((s,c) => {
+    return s + parseFloat(calcPayment(c.rate, c.copay, c.elig_days, c.attd_days, c.adj_days));
+  }, 0);
+
+  document.getElementById('metrics').innerHTML = `
+    <div class="metric"><div class="metric-value">${children.length}</div><div class="metric-label">Children</div></div>
+    <div class="metric"><div class="metric-value">${totalAttd}</div><div class="metric-label">Attended Days</div></div>
+    <div class="metric"><div class="metric-value">$${totalPay.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div><div class="metric-label">Total Payment</div></div>
+  `;
+
+  document.getElementById('children-title').textContent = `Children (${children.length} records)`;
+
+  // Table
+  const tbody = document.getElementById('table-body');
+  tbody.innerHTML = '';
+  children.forEach((c, idx) => {
+    const pay = calcPayment(c.rate, c.copay, c.elig_days, c.attd_days, c.adj_days);
+    const tr = document.createElement('tr');
+    tr.dataset.idx = idx;
+    tr.innerHTML = `
+      <td contenteditable class="editable" data-field="parent_client">${c.parent_client || ''}</td>
+      <td contenteditable class="editable" data-field="child_name">${c.child_name || ''}</td>
+      <td contenteditable class="editable" data-field="dob">${c.dob || ''}</td>
+      <td contenteditable class="editable num" data-field="rate">${fmt(c.rate)}</td>
+      <td contenteditable class="editable num" data-field="copay">${fmt(c.copay)}</td>
+      <td contenteditable class="editable num" data-field="elig_days">${c.elig_days ?? ''}</td>
+      <td contenteditable class="editable num" data-field="attd_days">${c.attd_days ?? ''}</td>
+      <td contenteditable class="editable num" data-field="adj_days">${c.adj_days ?? ''}</td>
+      <td class="num pay-cell">$${pay}</td>
+    `;
+    // Update payment and parsedData on edit
+    tr.querySelectorAll('[contenteditable]').forEach(cell => {
+      cell.addEventListener('blur', () => {
+        const field = cell.dataset.field;
+        let val = cell.textContent.trim();
+        const numFields = ['rate','copay','elig_days','attd_days','adj_days'];
+        if (numFields.includes(field)) {
+          val = val === '' ? null : parseFloat(val);
+        }
+        parsedData.children[idx][field] = val;
+        // Recalc payment
+        const ch = parsedData.children[idx];
+        const newPay = calcPayment(ch.rate, ch.copay, ch.elig_days, ch.attd_days, ch.adj_days);
+        tr.querySelector('.pay-cell').textContent = '$' + newPay;
+      });
+    });
+    tbody.appendChild(tr);
+  });
+}
+
+// Download
+downloadBtn.addEventListener('click', async () => {
+  if (!parsedData) return;
+  downloadBtn.disabled = true;
+  downloadBtn.textContent = '⏳ Building Excel…';
+  try {
+    const resp = await fetch('/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(parsedData)
+    });
+    if (!resp.ok) throw new Error('Download failed');
+    const blob = await resp.blob();
+    const cd = resp.headers.get('Content-Disposition') || '';
+    const match = cd.match(/filename="?([^"]+)"?/);
+    const filename = match ? match[1] : 'Certs.xlsx';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert('Download error: ' + err.message);
+  } finally {
+    downloadBtn.disabled = false;
+    downloadBtn.textContent = '⬇️ Download Excel';
+  }
+});
+</script>
+</body>
+</html>
