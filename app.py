@@ -13,19 +13,19 @@ from PIL import Image
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-
+ 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024 * 10  # 500MB (multiple files)
-
+ 
 ALLOWED_EXTENSIONS = {'.pdf', '.jpg', '.jpeg', '.png'}
-
+ 
 api_key = os.environ.get("ANTHROPIC_API_KEY")
 if not api_key:
     raise RuntimeError("ANTHROPIC_API_KEY environment variable is not set")
 client = anthropic.Anthropic(api_key=api_key)
-
+ 
 # ── Inline HTML ────────────────────────────────────────────────────────────────
-
+ 
 INDEX_HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -41,14 +41,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .header p { color: #b8d4f0; font-size: 0.95rem; }
   .container { max-width: 960px; margin: 2rem auto; padding: 0 1.5rem; }
   .card { background: white; border-radius: 12px; padding: 2rem; box-shadow: 0 2px 12px rgba(0,0,0,0.07); margin-bottom: 1.5rem; }
-
+ 
   /* Upload zone */
   .upload-zone { border: 2px dashed #adc8e8; border-radius: 10px; padding: 2.5rem 2rem; text-align: center; cursor: pointer; transition: all 0.2s; background: #f8fbff; }
   .upload-zone:hover, .upload-zone.drag-over { border-color: #2e6da4; background: #eef5ff; }
   .upload-zone .icon { font-size: 2.8rem; margin-bottom: 0.6rem; }
   .upload-zone p { color: #4a6a8a; font-size: 0.95rem; }
   #file-input { display: none; }
-
+ 
   /* File queue */
   .file-queue { margin-top: 1rem; display: none; }
   .file-item { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0.75rem; background: #f0f6ff; border-radius: 8px; margin-bottom: 0.4rem; font-size: 0.88rem; }
@@ -59,7 +59,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .file-item.error { background: #fff0f0; }
   .remove-file { background: none; border: none; cursor: pointer; color: #aaa; font-size: 1rem; padding: 0 0.25rem; line-height: 1; }
   .remove-file:hover { color: #c00; }
-
+ 
   /* Buttons */
   .btn-row { display: flex; gap: 0.75rem; margin-top: 1.25rem; }
   .btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.75rem 1.5rem; border: none; border-radius: 8px; font-family: inherit; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.2s; flex: 1; }
@@ -73,16 +73,16 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .btn-success:hover { background: #145c38; }
   .btn-success:disabled { background: #8ab8a0; cursor: not-allowed; }
   .btn-lg { padding: 1rem 2rem; font-size: 1.05rem; }
-
+ 
   /* Progress */
   .progress-wrap { margin-top: 1.25rem; display: none; }
   .progress-bar-outer { height: 10px; background: #dde8f5; border-radius: 99px; overflow: hidden; margin-bottom: 0.5rem; }
   .progress-bar-inner { height: 100%; background: #2e6da4; border-radius: 99px; width: 0%; transition: width 0.3s ease; }
   .progress-text { font-size: 0.88rem; color: #4a6a8a; margin-bottom: 0.3rem; }
   .progress-log { font-size: 0.78rem; color: #7a9ab8; max-height: 100px; overflow-y: auto; font-family: monospace; background: #f4f8ff; border-radius: 6px; padding: 0.4rem 0.6rem; display: none; }
-
+ 
   .error-box { background: #fff0f0; border: 1px solid #ffcccc; border-radius: 8px; padding: 1rem; color: #c00; font-size: 0.88rem; margin-top: 1rem; display: none; }
-
+ 
   /* Results */
   #results-section { display: none; }
   .results-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
@@ -104,7 +104,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .editable:focus { background: #fffde7 !important; outline: none; }
   .hint { font-size: 0.8rem; color: #7a9ab8; margin-top: 0.4rem; }
-
+ 
   td.source-badge { font-size: 0.72rem; color: #7a9ab8; }
 </style>
 </head>
@@ -121,23 +121,23 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <p style="margin-top:0.4rem;font-size:0.82rem;">PDF, JPG, or PNG &middot; Multiple files supported &middot; up to 50 MB each</p>
     </div>
     <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png" multiple>
-
+ 
     <div class="file-queue" id="file-queue"></div>
-
+ 
     <div class="progress-wrap" id="progress-wrap">
       <div class="progress-text" id="progress-text"></div>
       <div class="progress-bar-outer"><div class="progress-bar-inner" id="progress-bar"></div></div>
       <div class="progress-log" id="progress-log"></div>
     </div>
-
+ 
     <div class="error-box" id="error-box"></div>
-
+ 
     <div class="btn-row">
       <button class="btn btn-primary btn-lg" id="parse-btn" disabled>&#10024; Parse Certificates</button>
       <button class="btn btn-danger" id="clear-btn" disabled title="Clear all files and results">&#10006; Clear</button>
     </div>
   </div>
-
+ 
   <div id="results-section">
     <div class="card">
       <div class="results-header">
@@ -163,13 +163,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
     </div>
   </div>
 </div>
-
+ 
 <script>
 // ── State ──────────────────────────────────────────────────────────────────
 let fileQueue = [];
 let parsedData = null;
 let isRunning  = false;
-
+ 
 const uploadZone   = document.getElementById('upload-zone');
 const fileInput    = document.getElementById('file-input');
 const fileQueueEl  = document.getElementById('file-queue');
@@ -183,11 +183,11 @@ const errorBox     = document.getElementById('error-box');
 const resultsSection = document.getElementById('results-section');
 const downloadBtn  = document.getElementById('download-btn');
 const downloadBtn2 = document.getElementById('download-btn-2');
-
+ 
 // ── File handling ──────────────────────────────────────────────────────────
 const ALLOWED = ['.pdf','.jpg','.jpeg','.png'];
 function isAllowed(name) { return ALLOWED.some(e => name.toLowerCase().endsWith(e)); }
-
+ 
 function addFiles(files) {
   for (const file of files) {
     if (!isAllowed(file.name)) continue;
@@ -198,14 +198,14 @@ function addFiles(files) {
   parseBtn.disabled = fileQueue.length === 0 || isRunning;
   clearBtn.disabled = fileQueue.length === 0 && !parsedData;
 }
-
+ 
 function removeFile(id) {
   fileQueue = fileQueue.filter(f => f.id !== id);
   renderQueue();
   parseBtn.disabled = fileQueue.length === 0 || isRunning;
   clearBtn.disabled = fileQueue.length === 0 && !parsedData;
 }
-
+ 
 function renderQueue() {
   if (fileQueue.length === 0) { fileQueueEl.style.display = 'none'; return; }
   fileQueueEl.style.display = 'block';
@@ -220,12 +220,12 @@ function renderQueue() {
     </div>`;
   }).join('');
 }
-
+ 
 function setFileStatus(id, status) {
   const f = fileQueue.find(f => f.id === id);
   if (f) { f.status = status; renderQueue(); }
 }
-
+ 
 // ── Upload zone events ─────────────────────────────────────────────────────
 uploadZone.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', () => { addFiles(fileInput.files); fileInput.value = ''; });
@@ -235,7 +235,7 @@ uploadZone.addEventListener('drop', e => {
   e.preventDefault(); uploadZone.classList.remove('drag-over');
   addFiles(e.dataTransfer.files);
 });
-
+ 
 // ── Clear ──────────────────────────────────────────────────────────────────
 clearBtn.addEventListener('click', () => {
   if (isRunning) return;
@@ -253,7 +253,7 @@ clearBtn.addEventListener('click', () => {
   clearBtn.disabled = true;
   fileInput.value = '';
 });
-
+ 
 // ── Parse ──────────────────────────────────────────────────────────────────
 function addLog(msg) {
   progressLog.style.display = 'block';
@@ -262,11 +262,11 @@ function addLog(msg) {
   progressLog.appendChild(line);
   progressLog.scrollTop = progressLog.scrollHeight;
 }
-
+ 
 async function processFile(entry, fileIndex, totalFiles) {
   const { file, id } = entry;
   setFileStatus(id, 'processing');
-
+ 
   const form = new FormData();
   form.append('file', file);
   let jobId;
@@ -280,7 +280,7 @@ async function processFile(entry, fileIndex, totalFiles) {
     addLog(`\u274C ${file.name}: ${err.message}`);
     return null;
   }
-
+ 
   return new Promise(resolve => {
     const evtSource = new EventSource('/progress/' + jobId);
     evtSource.addEventListener('progress', e => {
@@ -313,7 +313,7 @@ async function processFile(entry, fileIndex, totalFiles) {
     };
   });
 }
-
+ 
 parseBtn.addEventListener('click', async () => {
   if (fileQueue.length === 0 || isRunning) return;
   isRunning = true;
@@ -326,20 +326,20 @@ parseBtn.addEventListener('click', async () => {
   progressLog.style.display = 'none';
   progressBar.style.width = '2%';
   progressText.textContent = 'Starting\u2026';
-
+ 
   const results = [];
   const pendingFiles = fileQueue.filter(f => f.status !== 'done');
   pendingFiles.forEach(f => { f.status = 'pending'; });
   renderQueue();
-
+ 
   for (let i = 0; i < pendingFiles.length; i++) {
     const result = await processFile(pendingFiles[i], i, pendingFiles.length);
     if (result) results.push(result);
   }
-
+ 
   isRunning = false;
   progressBar.style.width = '100%';
-
+ 
   if (results.length === 0) {
     progressText.textContent = 'No records extracted.';
     errorBox.textContent = '\u26A0\uFE0F No records could be extracted. Check the log for details.';
@@ -348,7 +348,7 @@ parseBtn.addEventListener('click', async () => {
     clearBtn.disabled = false;
     return;
   }
-
+ 
   const merged = mergeResults(results);
   parsedData = merged;
   progressText.textContent = `Done \u2014 ${merged.children.length} rows from ${results.length} file(s).`;
@@ -357,7 +357,7 @@ parseBtn.addEventListener('click', async () => {
   parseBtn.disabled = false;
   clearBtn.disabled = false;
 });
-
+ 
 // ── Merge results from multiple files ─────────────────────────────────────
 function mergeResults(results) {
   const provider = results[0]?.provider || {};
@@ -365,7 +365,7 @@ function mergeResults(results) {
   const children = results.flatMap(r => r.children || []);
   return { provider, children, summary, count: children.length };
 }
-
+ 
 // ── Render ─────────────────────────────────────────────────────────────────
 // Payment: if adj_days filled use adj_days, else use elig_days. attd_days not used.
 function calcPayment(rate, copay, elig, attd, adj) {
@@ -376,27 +376,27 @@ function calcPayment(rate, copay, elig, attd, adj) {
     : (parseFloat(elig) || 0);
   return (rate * days - copay).toFixed(2);
 }
-
+ 
 function renderResults(data) {
   const pi       = data.provider  || {};
   const children = data.children  || [];
-
+ 
   document.getElementById('info-grid').innerHTML = [
     ['Provider',       pi.name          || '\u2014'],
     ['Report Period',  pi.period        || '\u2014'],
     ['DHS Provider ID',pi.dhs_id        || '\u2014'],
     ['Date of Issue',  pi.date_of_issue || '\u2014'],
   ].map(([l,v]) => `<div class="info-card"><h4>${l}</h4><p>${v}</p></div>`).join('');
-
+ 
   const totalAttd = children.reduce((s,c) => s + (parseInt(c.attd_days)||0), 0);
   const totalPay  = children.reduce((s,c) => s + parseFloat(calcPayment(c.rate,c.copay,c.elig_days,c.attd_days,c.adj_days)), 0);
   document.getElementById('metrics').innerHTML = `
     <div class="metric"><div class="metric-value">${children.length}</div><div class="metric-label">Rows</div></div>
     <div class="metric"><div class="metric-value">${totalAttd}</div><div class="metric-label">Attended Days</div></div>
     <div class="metric"><div class="metric-value">$${totalPay.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div><div class="metric-label">Total Payment</div></div>`;
-
+ 
   document.getElementById('children-title').textContent = `Records (${children.length} rows)`;
-
+ 
   const tbody = document.getElementById('table-body');
   tbody.innerHTML = '';
   children.forEach((c, idx) => {
@@ -425,7 +425,7 @@ function renderResults(data) {
     tbody.appendChild(tr);
   });
 }
-
+ 
 // ── Download ───────────────────────────────────────────────────────────────
 async function doDownload() {
   if (!parsedData) return;
@@ -455,22 +455,22 @@ downloadBtn2.addEventListener('click', doDownload);
 </script>
 </body>
 </html>"""
-
+ 
 # ── Job store ──────────────────────────────────────────────────────────────────
 jobs = {}
 jobs_lock = threading.Lock()
-
+ 
 def push_event(job_id, event_type, data):
     with jobs_lock:
         if job_id in jobs:
             jobs[job_id]['events'].append({'type': event_type, 'data': json.dumps(data)})
-
+ 
 # ── Claude vision parser ───────────────────────────────────────────────────────
-
+ 
 SYSTEM_PROMPT = """You are a data extraction assistant for Illinois DHS Child Care Certificate Reports.
 When given an image of a certificate page, extract all child records and return ONLY valid JSON.
 No preamble, no explanation, no markdown fences — raw JSON only.
-
+ 
 Return this exact structure:
 {
   "provider": {
@@ -501,7 +501,7 @@ Return this exact structure:
   },
   "is_data_page": true
 }
-
+ 
 FORM LAYOUT — each child record block looks like this:
   12345 67890 12345          <- CHILD CARE CASE NO. (digits only, ignore this)
   IVR CASE#:3-200-123456    <- IVR line (ignore this)
@@ -509,7 +509,7 @@ FORM LAYOUT — each child record block looks like this:
     CHILD NAME               <- CHILD'S NAME — this is the child
     MM/DD/YYYY               <- child date of birth
     46.00  F  1.00  ...      <- rate rows (F, P, S)
-
+ 
 COLUMN ORDER — count left to right on each rate row:
   Col 1: RATE              (e.g. 54.00, 27.00, 23.00)
   Col 2: TYPE              (F = full-day, P = part-day, S = school-age)
@@ -519,7 +519,7 @@ COLUMN ORDER — count left to right on each rate row:
   Col 6: ADJ ELIG          → adj_days   (handwritten — the FIRST blank/underline after DAYS ELIG)
   Col 7: ATTD              → attd_days  (handwritten — the SECOND blank/underline, closest to right margin)
   Col 8: CODE              (letter code, ignore)
-
+ 
 CRITICAL — reading handwritten day values:
 - Col 6 (ADJ ELIG) and Col 7 (ATTD) are two SEPARATE blank fields side by side.
 - The handwritten number closest to the RIGHT MARGIN of the page is ALWAYS attd_days (Col 7).
@@ -530,7 +530,7 @@ CRITICAL — reading handwritten day values:
 - NEVER put the ATTD value (right margin) into adj_days
 - NEVER put the ADJ ELIG value (middle) into attd_days
 - A blank line (——) always means null, never zero
-
+ 
 RATE ROW RULES — one output record per filled row:
 - Each child has up to 3 rate rows: F (full-day), P (part-day), S (school-age).
 - A row is "filled" if it has a number in the DAYS ELIG column (Col 5).
@@ -544,7 +544,7 @@ RATE ROW RULES — one output record per filled row:
 - NEVER skip a filled row. NEVER merge two filled rows into one record.
 - rate: dollar amount from that specific row
 - copay: PARENT CO-PAY from that same row; use 0.0 if blank
-
+ 
 Other rules:
 - parent_client: the CLIENT'S NAME — the all-caps adult name BELOW the IVR CASE# line.
   NEVER put the case number (digits), the IVR CASE# string, or any number in parent_client.
@@ -558,12 +558,12 @@ Other rules:
 - summary: only fill on the final signature/summary page; leave null elsewhere
 - Do not invent data. If a field is blank or illegible, use null or empty string.
 """
-
+ 
 def image_to_b64(pil_image):
     buf = io.BytesIO()
     pil_image.save(buf, format="JPEG", quality=85)
     return base64.standard_b64encode(buf.getvalue()).decode()
-
+ 
 def get_pages(file_bytes, filename):
     ext = os.path.splitext(filename.lower())[1]
     if ext == '.pdf':
@@ -571,7 +571,7 @@ def get_pages(file_bytes, filename):
     elif ext in ('.jpg', '.jpeg', '.png'):
         return [Image.open(io.BytesIO(file_bytes)).convert("RGB")]
     raise ValueError(f"Unsupported file type: {ext}")
-
+ 
 def parse_page(pil_image):
     b64 = image_to_b64(pil_image)
     message = client.messages.create(
@@ -589,17 +589,17 @@ def parse_page(pil_image):
     raw = message.content[0].text.strip()
     raw = re.sub(r'```[\w]*\n?|```', '', raw).strip()
     return json.loads(raw)
-
+ 
 def run_job(job_id, file_bytes, filename):
     try:
         pages = get_pages(file_bytes, filename)
         n = len(pages)
         push_event(job_id, 'progress', {'pct': 5, 'msg': f'Converting — {n} pages', 'detail': f'{n} pages found'})
-
+ 
         provider_info = {}
         all_children  = []
         summary       = {}
-
+ 
         for i, page in enumerate(pages):
             pct = 5 + int(90 * i / n)
             push_event(job_id, 'progress', {'pct': pct, 'msg': f'Page {i+1} of {n}…', 'detail': None})
@@ -608,27 +608,27 @@ def run_job(job_id, file_bytes, filename):
             except Exception as e:
                 push_event(job_id, 'progress', {'pct': pct, 'msg': f'Page {i+1} of {n}…', 'detail': f'Page {i+1} error: {e}'})
                 continue
-
+ 
             if not result.get('is_data_page', True):
                 continue
-
+ 
             p = result.get('provider') or {}
             for key in ('name','dhs_id','period','date_of_issue','days_open'):
                 if not provider_info.get(key) and p.get(key):
                     provider_info[key] = p[key]
-
+ 
             kids = [c for c in (result.get('children') or []) if c.get('child_name')]
             all_children.extend(kids)
-
+ 
             s = result.get('summary') or {}
             for key in ('total_attended','total_eligible','attendance_pct','signed_by','sig_date'):
                 if s.get(key) not in (None, '', 0):
                     summary[key] = s[key]
-
+ 
             if kids:
                 push_event(job_id, 'progress', {'pct': pct, 'msg': f'Page {i+1} of {n}…',
                     'detail': f'Page {i+1}: {len(kids)} rows (total: {len(all_children)})'})
-
+ 
         push_event(job_id, 'done', {
             'provider': provider_info, 'children': all_children,
             'summary': summary, 'count': len(all_children)
@@ -639,9 +639,9 @@ def run_job(job_id, file_bytes, filename):
         with jobs_lock:
             if job_id in jobs:
                 jobs[job_id]['done'] = True
-
+ 
 # ── Excel builder ──────────────────────────────────────────────────────────────
-
+ 
 def build_excel(provider_info, children, summary):
     wb = Workbook()
     ws = wb.active
@@ -653,14 +653,14 @@ def build_excel(provider_info, children, summary):
     thin = Side(style="thin", color="AAAAAA")
     bdr  = Border(left=thin, right=thin, top=thin, bottom=thin)
     period = provider_info.get("period", "")
-
+ 
     ws.merge_cells("A1:H1")
     ws["A1"] = f"Child Care Certificate Report – {period}"
     ws["A1"].font = Font(name="Arial", bold=True, size=14, color="FFFFFF")
     ws["A1"].fill = hf
     ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 28
-
+ 
     for i, (lbl, val) in enumerate([
         ("Provider:", provider_info.get("name","")),
         ("DHS Provider ID#:", provider_info.get("dhs_id","")),
@@ -670,7 +670,7 @@ def build_excel(provider_info, children, summary):
     ], start=2):
         ws[f"A{i}"] = lbl; ws[f"A{i}"].font = Font(name="Arial", bold=True, size=10)
         ws[f"B{i}"] = val; ws[f"B{i}"].font = Font(name="Arial", size=10)
-
+ 
     hr = 8
     # Columns: A=Parent, B=Child, C=Rate, D=Copay, E=Elig Days, F=Attd Days, G=Adj Days, H=Payment
     for c, h in enumerate(["Parent/Client", "Child's Name",
@@ -681,7 +681,7 @@ def build_excel(provider_info, children, summary):
         cell.fill = shf; cell.border = bdr
         cell.alignment = Alignment(horizontal="center", wrap_text=True)
     ws.row_dimensions[hr].height = 30
-
+ 
     for ri, child in enumerate(children, start=hr+1):
         fill = af if ri % 2 == 0 else wf
         # Write columns 1-7: Parent, Child, Rate, Copay, Elig, Attd, Adj
@@ -709,7 +709,7 @@ def build_excel(provider_info, children, summary):
         pay.border = bdr
         pay.alignment = Alignment(horizontal="center")
         pay.number_format = '$#,##0.00'
-
+ 
     tr = hr + len(children) + 1
     for c in range(1, 9):
         cell = ws.cell(tr, c)
@@ -722,10 +722,10 @@ def build_excel(provider_info, children, summary):
     ws.cell(tr, 5, f"=SUM(E{hr+1}:E{hr+len(children)})")
     ws.cell(tr, 6, f"=SUM(F{hr+1}:F{hr+len(children)})")
     ws.cell(tr, 8, f"=SUM(H{hr+1}:H{hr+len(children)})").number_format = '$#,##0.00'
-
+ 
     for i, w in enumerate([24, 20, 11, 11, 10, 10, 10, 13], 1):
         ws.column_dimensions[get_column_letter(i)].width = w
-
+ 
     ws2 = wb.create_sheet("Attendance Summary")
     ws2.merge_cells("A1:D1")
     ws2["A1"] = f"Attendance Summary – {period}"
@@ -746,12 +746,12 @@ def build_excel(provider_info, children, summary):
         ws2[f"B{r}"] = val; ws2[f"B{r}"].font = Font(name="Arial", size=11)
     ws2.column_dimensions["A"].width = 30
     ws2.column_dimensions["B"].width = 20
-
+ 
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
     return buf
-
+ 
 def make_filename(provider_info):
     raw_name = provider_info.get("name", "ChildCare")
     raw_period = provider_info.get("period", "")
@@ -760,13 +760,13 @@ def make_filename(provider_info):
     parts = raw_period.split()
     period_short = f"{parts[0][:3].title()} {parts[1]}" if len(parts) == 2 else raw_period.title()
     return f"{name_clean} {period_short} Certs.xlsx"
-
+ 
 # ── Routes ─────────────────────────────────────────────────────────────────────
-
+ 
 @app.route("/")
 def index():
     return INDEX_HTML, 200, {"Content-Type": "text/html"}
-
+ 
 @app.route("/upload", methods=["POST"])
 def upload():
     if "file" not in request.files:
@@ -781,7 +781,7 @@ def upload():
         jobs[job_id] = {'events': [], 'done': False}
     threading.Thread(target=run_job, args=(job_id, file_bytes, f.filename), daemon=True).start()
     return jsonify({"job_id": job_id})
-
+ 
 @app.route("/progress/<job_id>")
 def progress(job_id):
     def generate():
@@ -795,7 +795,7 @@ def progress(job_id):
                     return
                 events = job['events'][cursor:]
                 is_done = job['done']
-
+ 
             for ev in events:
                 yield f"event: {ev['type']}\ndata: {ev['data']}\n\n"
                 cursor += 1
@@ -805,15 +805,15 @@ def progress(job_id):
                         with jobs_lock: jobs.pop(jid, None)
                     threading.Thread(target=cleanup, daemon=True).start()
                     return
-
+ 
             if is_done and not events:
                 return
             time.sleep(0.4)
-
+ 
     return Response(stream_with_context(generate()),
                     mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
-
+ 
 @app.route("/download", methods=["POST"])
 def download():
     try:
@@ -827,15 +827,15 @@ def download():
     except Exception as e:
         app.logger.error(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
-
+ 
 @app.route("/health")
 def health():
     return jsonify({"status": "ok", "api_key_set": bool(api_key), "active_jobs": len(jobs)})
-
+ 
 @app.errorhandler(413)
 def too_large(e):
     return jsonify({"error": "File too large. Maximum 50MB per file."}), 413
-
+ 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True, threaded=True)
