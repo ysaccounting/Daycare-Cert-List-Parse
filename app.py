@@ -15,7 +15,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024 * 10  # 500MB (multiple files)
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB — files are uploaded one per request
 
 ALLOWED_EXTENSIONS = {'.pdf', '.jpg', '.jpeg', '.png'}
 
@@ -682,7 +682,7 @@ def build_excel(provider_info, children, summary):
     bdr  = Border(left=thin, right=thin, top=thin, bottom=thin)
     period = provider_info.get("period", "")
 
-    ws.merge_cells("A1:H1")
+    ws.merge_cells("A1:J1")
     ws["A1"] = f"Child Care Certificate Report – {period}"
     ws["A1"].font = Font(name="Arial", bold=True, size=14, color="FFFFFF")
     ws["A1"].fill = hf
@@ -700,7 +700,8 @@ def build_excel(provider_info, children, summary):
         ws[f"B{i}"] = val; ws[f"B{i}"].font = Font(name="Arial", size=10)
 
     hr = 8
-    # Columns: A=Parent, B=Child, C=Rate, D=Copay, E=Elig Days, F=Attd Days, G=Adj Days, H=Payment
+    # Columns: A=Parent, B=Child, C=Rate, D=Copay, E=Elig Days, F=Attd Days,
+    #          G=Adj Days, H=Payment, I=Paid (manual), J=Payment Notes (manual)
     for c, h in enumerate(["Parent/Client", "Child's Name",
                             "Rate ($)", "Co-Pay ($)", "Elig Days",
                             "Attd Days", "Adj Days", "Payment ($)"], 1):
@@ -708,6 +709,20 @@ def build_excel(provider_info, children, summary):
         cell.font = Font(name="Arial", bold=True, color="FFFFFF", size=10)
         cell.fill = shf; cell.border = bdr
         cell.alignment = Alignment(horizontal="center", wrap_text=True)
+
+    # Manual-entry columns — left empty for the user to fill in after download
+    paid_hdr = ws.cell(hr, 9, "Paid")
+    paid_hdr.font = Font(name="Arial", bold=True, color="FFFF00", size=10)
+    paid_hdr.fill = PatternFill("solid", start_color="375623")
+    paid_hdr.border = bdr
+    paid_hdr.alignment = Alignment(horizontal="center", wrap_text=True)
+
+    notes_hdr = ws.cell(hr, 10, "Payment Notes")
+    notes_hdr.font = Font(name="Arial", bold=True, color="1A1A1A", size=10)
+    notes_hdr.fill = PatternFill("solid", start_color="FFFF00")
+    notes_hdr.border = bdr
+    notes_hdr.alignment = Alignment(horizontal="center", wrap_text=True)
+
     ws.row_dimensions[hr].height = 30
 
     for ri, child in enumerate(children, start=hr+1):
@@ -737,6 +752,14 @@ def build_excel(provider_info, children, summary):
         pay.alignment = Alignment(horizontal="center")
         pay.number_format = '$#,##0.00'
 
+        # I = Paid, J = Payment Notes — intentionally blank, bordered for manual entry
+        for ci, align in ((9, "center"), (10, "left")):
+            blank = ws.cell(ri, ci)
+            blank.font = Font(name="Arial", size=10)
+            blank.fill = wf
+            blank.border = bdr
+            blank.alignment = Alignment(horizontal=align)
+
     tr = hr + len(children) + 1
     for c in range(1, 9):
         cell = ws.cell(tr, c)
@@ -750,7 +773,7 @@ def build_excel(provider_info, children, summary):
     ws.cell(tr, 6, f"=SUM(F{hr+1}:F{hr+len(children)})")
     ws.cell(tr, 8, f"=SUM(H{hr+1}:H{hr+len(children)})").number_format = '$#,##0.00'
 
-    for i, w in enumerate([24, 20, 11, 11, 10, 10, 10, 13], 1):
+    for i, w in enumerate([24, 20, 11, 11, 10, 10, 10, 13, 10, 30], 1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
     ws2 = wb.create_sheet("Attendance Summary")
