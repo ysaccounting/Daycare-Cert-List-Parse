@@ -704,24 +704,12 @@ def build_excel(provider_info, children, summary):
     #          G=Adj Days, H=Payment, I=Paid (manual), J=Payment Notes (manual)
     for c, h in enumerate(["Parent/Client", "Child's Name",
                             "Rate ($)", "Co-Pay ($)", "Elig Days",
-                            "Attd Days", "Adj Days", "Payment ($)"], 1):
+                            "Attd Days", "Adj Days", "Payment ($)",
+                            "Paid", "Payment Notes"], 1):
         cell = ws.cell(hr, c, h)
         cell.font = Font(name="Arial", bold=True, color="FFFFFF", size=10)
         cell.fill = shf; cell.border = bdr
         cell.alignment = Alignment(horizontal="center", wrap_text=True)
-
-    # Manual-entry columns — left empty for the user to fill in after download
-    paid_hdr = ws.cell(hr, 9, "Paid")
-    paid_hdr.font = Font(name="Arial", bold=True, color="FFFF00", size=10)
-    paid_hdr.fill = PatternFill("solid", start_color="375623")
-    paid_hdr.border = bdr
-    paid_hdr.alignment = Alignment(horizontal="center", wrap_text=True)
-
-    notes_hdr = ws.cell(hr, 10, "Payment Notes")
-    notes_hdr.font = Font(name="Arial", bold=True, color="1A1A1A", size=10)
-    notes_hdr.fill = PatternFill("solid", start_color="FFFF00")
-    notes_hdr.border = bdr
-    notes_hdr.alignment = Alignment(horizontal="center", wrap_text=True)
 
     ws.row_dimensions[hr].height = 30
 
@@ -752,11 +740,11 @@ def build_excel(provider_info, children, summary):
         pay.alignment = Alignment(horizontal="center")
         pay.number_format = '$#,##0.00'
 
-        # I = Paid, J = Payment Notes — intentionally blank, bordered for manual entry
+        # I = Paid, J = Payment Notes — intentionally blank, styled to match the table
         for ci, align in ((9, "center"), (10, "left")):
             blank = ws.cell(ri, ci)
             blank.font = Font(name="Arial", size=10)
-            blank.fill = wf
+            blank.fill = fill
             blank.border = bdr
             blank.alignment = Alignment(horizontal=align)
 
